@@ -1,4 +1,4 @@
-package org.mystic.cuda;
+package org.mystic.cuda.samples;
 
 import jcuda.Pointer;
 import jcuda.runtime.JCuda;

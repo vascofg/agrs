@@ -44,7 +44,7 @@ public class JCudaVectorAdd
 
         // Load the ptx file.
         CUmodule module = new CUmodule();
-        cuModuleLoad(module, "./kernels/JCudaVectorAddKernel.ptx");
+        cuModuleLoad(module, "./target/kernels/JCudaVectorAddKernel.ptx");
 
         // Obtain a function pointer to the "add" function.
         CUfunction function = new CUfunction();

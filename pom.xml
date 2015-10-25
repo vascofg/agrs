@@ -2,14 +2,15 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>org.mystic</groupId>
-    <artifactId>mavenized-jcuda</artifactId>
-    <version>0.1.2</version>
+    <groupId>org.agrs</groupId>
+    <artifactId>jcuda</artifactId>
+    <version>0.1</version>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Set needed version of JCuda here -->
         <jcuda.version>0.7.5</jcuda.version>
-        <project.mainClass>org.mystic.cuda.samples.JCudaVectorAdd</project.mainClass>
+        <jnetpcap.version>1.4.r1300</jnetpcap.version>
+        <project.mainClass>org.agrs.jcuda.Analyze</project.mainClass>
     </properties>
     <dependencies>
         <!--JCuda Java libs-->
@@ -43,11 +44,22 @@
             <artifactId>jcusolver</artifactId>
             <version>${jcuda.version}</version>
         </dependency>
+        <!--JNETPCAP-->
+        <dependency>
+            <groupId>jnetpcap</groupId>
+            <artifactId>jnetpcap</artifactId>
+            <version>${jnetpcap.version}</version>
+        </dependency>
     </dependencies>
     <repositories>
         <repository>
             <id>jcuda.local</id>
             <name>JCuda</name>
+            <url>file:${project.basedir}/repo</url>
+        </repository>
+        <repository>
+            <id>jnetpcap.local</id>
+            <name>jnetpcap</name>
             <url>file:${project.basedir}/repo</url>
         </repository>
     </repositories>
@@ -126,7 +138,6 @@
                         <!--Replace with your class reference if any -->
                         <mainClass>${project.mainClass}</mainClass>
                     </arguments>
-                    <workingDirectory>${project.build.directory}</workingDirectory>
                 </configuration>
             </plugin>
         </plugins>
@@ -347,6 +358,13 @@
                     <artifactId>libJCusolver</artifactId>
                     <version>${jcuda.version}</version>
                     <classifier>${libJ.version}</classifier>
+                    <type>so</type>
+                </dependency>
+                <!--native jnetpcap-->
+                <dependency>
+                    <groupId>jnetpcap</groupId>
+                    <artifactId>libjnetpcap</artifactId>
+                    <version>${jnetpcap.version}</version>
                     <type>so</type>
                 </dependency>
             </dependencies>
