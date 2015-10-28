@@ -9,8 +9,6 @@ import org.jnetpcap.packet.PcapPacket;
 import org.jnetpcap.packet.PcapPacketHandler;
 import org.jnetpcap.protocol.JProtocol;
 import org.jnetpcap.protocol.network.Ip4;
-import org.jnetpcap.protocol.tcpip.Http;
-import org.jnetpcap.protocol.tcpip.Tcp;
 
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -48,27 +46,56 @@ public class Analyze {
          * Third we create a packet handler which will receive packets from the
          * libpcap loop.
          **************************************************************************/
-        PcapPacketHandler<List<PcapPacket>> jpacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
+        PcapPacketHandler<List<PcapPacket>> deepPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
 
-            public void nextPacket(PcapPacket packet, List<PcapPacket> httpPackets) { //user param
-                //packets.add(packet);
-                //byteCounts.add(packet.getPacketWirelen());
-                /*System.out.printf("Received at %s caplen=%-4d len=%-4d %s%n",
-                        new Date(packet.getCaptureHeader().timestampInMillis()),
-                        packet.getCaptureHeader().caplen(), // Length actually captured
-                        packet.getCaptureHeader().wirelen(), // Original length
-                        user // User supplied object
-                );*/
+            public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
+
+                int i = 0, state = 0;
+                Boolean isHTTP = null;
+                try {
+                    while (isHTTP == null) {
+                        switch (state) {
+                            case 0:
+                                if (packet.getByte(i) == 'G' && packet.getByte(i + 1) == 'E' &&
+                                        packet.getByte(i + 2) == 'T' && packet.getByte(i + 3) == ' ') {
+                                    state++;
+                                    i += 3;
+                                }
+                                break;
+                            case 1:
+                                if (packet.getByte(i) == ' ')
+                                    state++;
+                                break;
+                            case 2:
+                                if (packet.getByte(i) == 'H' && packet.getByte(i + 1) == 'T' &&
+                                        packet.getByte(i + 2) == 'T' && packet.getByte(i + 3) == 'P' &&
+                                        packet.getByte(i + 4) == '/' && packet.getByte(i + 6) == '.')
+                                    isHTTP = true;
+                                else
+                                    isHTTP = false;
+                                break;
+                        }
+                        i++;
+                    }
+                } catch (java.nio.BufferUnderflowException e) {
+                    isHTTP = false;
+                }
+
+                if (isHTTP) {
+                    packets.add(packet);
+                }
+            }
+        };
+
+        final PcapPacketHandler<List<PcapPacket>> ipPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
+
+            public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
                 packet.scan(JProtocol.ETHERNET_ID);
 
                 Ip4 ip = new Ip4();
-                Tcp tcp = new Tcp();
-                Http http = new Http();
 
-                if (packet.hasHeader(ip) && packet.hasHeader(tcp) && packet.hasHeader(http)) {
-                    /*System.out.printf("HTTP PACKET: %s:%d->%s:%d%n", FormatUtils.ip(ip.source()), tcp.source(),
-                            FormatUtils.ip(ip.destination()), tcp.destination());*/
-                    httpPackets.add(packet);
+                if (packet.hasHeader(ip)) {
+                    packets.add(packet);
                 }
             }
         };
@@ -83,8 +110,25 @@ public class Analyze {
          **************************************************************************/
         try {
             List<PcapPacket> httpPackets = new LinkedList<>();
-            pcap.loop(Pcap.LOOP_INFINITE, jpacketHandler, httpPackets);
-            System.out.printf("Found %d HTTP packets%n", httpPackets.size());
+            long time0 = System.nanoTime();
+            pcap.loop(Pcap.LOOP_INFINITE, deepPacketHandler, httpPackets);
+            long time1 = System.nanoTime();
+            System.out.printf("Found %d HTTP packets in %5.3fms%n", httpPackets.size(), (time1 - time0) / 1e6);
+
+            /*
+            List<PcapPacket> ipPackets = new LinkedList<>();
+            time0 = System.nanoTime();
+            pcap.loop(Pcap.LOOP_INFINITE, ipPacketHandler, ipPackets);
+            time1 = System.nanoTime();
+            System.out.printf("Found %d IP packets in %5.3fms%n", ipPackets.size(), (time1-time0) / 1e6);
+
+            long byteCount = 0;
+
+            for(PcapPacket p : ipPackets)
+                byteCount+=p.getPacketWirelen();
+
+            System.out.printf("Total byte count: %d%n",byteCount);*/
+
         } finally {
             /***************************************************************************
              * Last thing to do is close the pcap handle

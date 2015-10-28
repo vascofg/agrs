@@ -50,7 +50,7 @@ public class JCudaVectorAdd
         CUfunction function = new CUfunction();
         cuModuleGetFunction(function, module, "add");
 
-        int numElements = 100000;
+        int numElements = 10000000;
 
         // Allocate and fill the host input data
         float hostInputA[] = new float[numElements];
@@ -61,8 +61,11 @@ public class JCudaVectorAdd
             hostInputB[i] = (float)i;
         }
 
+        System.out.printf("[Vector addition of %d elements]%n", numElements);
+
         // Allocate the device input data, and copy the
         // host input data to the device
+        System.out.println("Copy input data from the host memory to the CUDA device");
         CUdeviceptr deviceInputA = new CUdeviceptr();
         cuMemAlloc(deviceInputA, numElements * Sizeof.FLOAT);
         cuMemcpyHtoD(deviceInputA, Pointer.to(hostInputA),
@@ -85,24 +88,33 @@ public class JCudaVectorAdd
             Pointer.to(deviceOutput)
         );
 
-        // Call the kernel function.
-        int blockSizeX = 256;
-        int gridSizeX = (int)Math.ceil((double)numElements / blockSizeX);
+        // Launch the Vector Add CUDA Kernel
+        int threadsPerBlock = 256;
+        int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
+
+        System.out.printf("CUDA kernel launch with %d blocks of %d threads%n",blocksPerGrid, threadsPerBlock);
+
+        long time0 = System.nanoTime();
         cuLaunchKernel(function,
-            gridSizeX,  1, 1,      // Grid dimension
-            blockSizeX, 1, 1,      // Block dimension
+            blocksPerGrid,  1, 1,      // Grid dimension
+            threadsPerBlock, 1, 1,      // Block dimension
             0, null,               // Shared memory size and stream
             kernelParameters, null // Kernel- and extra parameters
         );
         cuCtxSynchronize();
 
+        long time1 = System.nanoTime();
+        System.out.printf("%5.3fms%n", (time1-time0) / 1e6);
         // Allocate host output memory and copy the device output
         // to the host.
+        System.out.println("Copy output data from the CUDA device to the host memory");
         float hostOutput[] = new float[numElements];
         cuMemcpyDtoH(Pointer.to(hostOutput), deviceOutput,
             numElements * Sizeof.FLOAT);
 
         // Verify the result
+        System.out.println("Verifying the result on CPU");
+        time0 = System.nanoTime();
         boolean passed = true;
         for(int i = 0; i < numElements; i++)
         {
@@ -116,6 +128,8 @@ public class JCudaVectorAdd
                 break;
             }
         }
+        time1 = System.nanoTime();
+        System.out.printf("%5.3fms%n", (time1-time0) / 1e6);
         System.out.println("Test "+(passed?"PASSED":"FAILED"));
 
         // Clean up.
