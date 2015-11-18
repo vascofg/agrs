@@ -5,10 +5,12 @@ package org.agrs.jcuda;
  */
 
 import org.jnetpcap.Pcap;
+import org.jnetpcap.packet.AbstractMessageHeader;
 import org.jnetpcap.packet.PcapPacket;
 import org.jnetpcap.packet.PcapPacketHandler;
 import org.jnetpcap.protocol.JProtocol;
 import org.jnetpcap.protocol.network.Ip4;
+import org.jnetpcap.protocol.tcpip.Http;
 
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -21,6 +23,8 @@ public class Analyze {
      *
      * @param args ignored
      */
+
+    static long numPackets = 0;
 
     public static void main(String[] args) {
         /***************************************************************************
@@ -49,7 +53,7 @@ public class Analyze {
         PcapPacketHandler<List<PcapPacket>> deepPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
 
             public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
-
+                numPackets++;
                 int i = 0, state = 0;
                 Boolean isHTTP = null;
                 try {
@@ -100,6 +104,22 @@ public class Analyze {
             }
         };
 
+        final PcapPacketHandler<List<PcapPacket>> httpPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
+
+            public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
+                numPackets++;
+                packet.scan(JProtocol.ETHERNET_ID);
+
+                Http http = new Http();
+
+                if (packet.hasHeader(http)) {
+                    if(http.getMessageType()== AbstractMessageHeader.MessageType.REQUEST)
+                        if(http.fieldValue(Http.Request.RequestMethod).equals("GET"))
+                            packets.add(packet);
+                }
+            }
+        };
+
         /***************************************************************************
          * Fourth we enter the loop and tell it to capture * packets. The loop
          * method does a mapping of pcap.datalink() DLT value to JProtocol ID, which
@@ -109,17 +129,18 @@ public class Analyze {
          * which protocol ID to use as the data link type for this pcap interface.
          **************************************************************************/
         try {
-            List<PcapPacket> httpPackets = new LinkedList<>();
+            /*List<PcapPacket> httpPackets = new LinkedList<>();
             long time0 = System.nanoTime();
             pcap.loop(Pcap.LOOP_INFINITE, deepPacketHandler, httpPackets);
+            //pcap.loop(Pcap.LOOP_INFINITE, httpPacketHandler, httpPackets);
             long time1 = System.nanoTime();
-            System.out.printf("Found %d HTTP packets in %5.3fms%n", httpPackets.size(), (time1 - time0) / 1e6);
+            System.out.printf("Found %d HTTP packets out of %d packets in %5.3fms%n", httpPackets.size(), numPackets, (time1 - time0) / 1e6);
+*/
 
-            /*
             List<PcapPacket> ipPackets = new LinkedList<>();
-            time0 = System.nanoTime();
+            long time0 = System.nanoTime();
             pcap.loop(Pcap.LOOP_INFINITE, ipPacketHandler, ipPackets);
-            time1 = System.nanoTime();
+            long time1 = System.nanoTime();
             System.out.printf("Found %d IP packets in %5.3fms%n", ipPackets.size(), (time1-time0) / 1e6);
 
             long byteCount = 0;
@@ -127,7 +148,7 @@ public class Analyze {
             for(PcapPacket p : ipPackets)
                 byteCount+=p.getPacketWirelen();
 
-            System.out.printf("Total byte count: %d%n",byteCount);*/
+            System.out.printf("Total byte count: %d%n",byteCount);
 
         } finally {
             /***************************************************************************
