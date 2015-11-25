@@ -12,6 +12,7 @@ import org.jnetpcap.protocol.JProtocol;
 import org.jnetpcap.protocol.network.Ip4;
 import org.jnetpcap.protocol.tcpip.Http;
 
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -27,17 +28,12 @@ public class Analyze {
     static long numPackets = 0;
 
     public static void main(String[] args) {
-        /***************************************************************************
-         * First we setup error buffer and name for our file
-         **************************************************************************/
+
         final StringBuilder errbuf = new StringBuilder(); // For any error msgs
         final String file = "tests/http.pcap";
 
         System.out.printf("Opening file for reading: %s%n", file);
 
-        /***************************************************************************
-         * Second we open up the selected file using openOffline call
-         **************************************************************************/
         Pcap pcap = Pcap.openOffline(file, errbuf);
 
         if (pcap == null) {
@@ -46,11 +42,17 @@ public class Analyze {
             return;
         }
 
-        /***************************************************************************
-         * Third we create a packet handler which will receive packets from the
-         * libpcap loop.
-         **************************************************************************/
-        PcapPacketHandler<List<PcapPacket>> deepPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
+        long time0 = System.nanoTime();
+        long result = analyzeDPICUDA(pcap);
+        long time1 = System.nanoTime();
+
+        System.out.printf("Found %d packets in %5.3fms%n", result, (time1-time0) / 1e6);
+
+        pcap.close();
+    }
+
+    private static List<PcapPacket> analyzeDPI(Pcap pcap) {
+        final PcapPacketHandler<List<PcapPacket>> DPIHandler = new PcapPacketHandler<List<PcapPacket>>() {
 
             public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
                 numPackets++;
@@ -91,6 +93,13 @@ public class Analyze {
             }
         };
 
+        List<PcapPacket> httpPackets = new LinkedList<>();
+        pcap.loop(Pcap.LOOP_INFINITE, DPIHandler, httpPackets);
+
+        return httpPackets;
+    }
+
+    private static List<PcapPacket> analyzeIpPackets(Pcap pcap) {
         final PcapPacketHandler<List<PcapPacket>> ipPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
 
             public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
@@ -104,6 +113,12 @@ public class Analyze {
             }
         };
 
+        List<PcapPacket> ipPackets = new LinkedList<>();
+        pcap.loop(Pcap.LOOP_INFINITE, ipPacketHandler, ipPackets);
+        return ipPackets;
+    }
+
+    private static List<PcapPacket> analyzeHttpPackets(Pcap pcap) {
         final PcapPacketHandler<List<PcapPacket>> httpPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
 
             public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
@@ -113,49 +128,39 @@ public class Analyze {
                 Http http = new Http();
 
                 if (packet.hasHeader(http)) {
-                    if(http.getMessageType()== AbstractMessageHeader.MessageType.REQUEST)
-                        if(http.fieldValue(Http.Request.RequestMethod).equals("GET"))
+                    if (http.getMessageType() == AbstractMessageHeader.MessageType.REQUEST)
+                        if (http.fieldValue(Http.Request.RequestMethod).equals("GET"))
                             packets.add(packet);
                 }
             }
         };
 
-        /***************************************************************************
-         * Fourth we enter the loop and tell it to capture * packets. The loop
-         * method does a mapping of pcap.datalink() DLT value to JProtocol ID, which
-         * is needed by JScanner. The scanner scans the packet buffer and decodes
-         * the headers. The mapping is done automatically, although a variation on
-         * the loop method exists that allows the programmer to sepecify exactly
-         * which protocol ID to use as the data link type for this pcap interface.
-         **************************************************************************/
+        List<PcapPacket> httpPackets = new LinkedList<>();
+        pcap.loop(Pcap.LOOP_INFINITE, httpPacketHandler, httpPackets);
+        return httpPackets;
+    }
+
+    private static long analyzeDPICUDA(Pcap pcap) {
+        final PcapPacketHandler<List<String>> packetStringListHandler = new PcapPacketHandler<List<String>>() {
+
+            public void nextPacket(PcapPacket packet, List<String> stringList) { //user param
+                stringList.add(packet.getUTF8String(0, packet.size()));
+            }
+        };
+
+        List<String> packetStrings = new LinkedList<>();
+        pcap.loop(Pcap.LOOP_INFINITE, packetStringListHandler, packetStrings);
+
+        long numHTTPPackets = 0;
+
         try {
-            /*List<PcapPacket> httpPackets = new LinkedList<>();
-            long time0 = System.nanoTime();
-            pcap.loop(Pcap.LOOP_INFINITE, deepPacketHandler, httpPackets);
-            //pcap.loop(Pcap.LOOP_INFINITE, httpPacketHandler, httpPackets);
-            long time1 = System.nanoTime();
-            System.out.printf("Found %d HTTP packets out of %d packets in %5.3fms%n", httpPackets.size(), numPackets, (time1 - time0) / 1e6);
-*/
-
-            List<PcapPacket> ipPackets = new LinkedList<>();
-            long time0 = System.nanoTime();
-            pcap.loop(Pcap.LOOP_INFINITE, ipPacketHandler, ipPackets);
-            long time1 = System.nanoTime();
-            System.out.printf("Found %d IP packets in %5.3fms%n", ipPackets.size(), (time1-time0) / 1e6);
-
-            long byteCount = 0;
-
-            for(PcapPacket p : ipPackets)
-                byteCount+=p.getPacketWirelen();
-
-            System.out.printf("Total byte count: %d%n",byteCount);
-
-        } finally {
-            /***************************************************************************
-             * Last thing to do is close the pcap handle
-             **************************************************************************/
-            pcap.close();
+            CudaAnalyzer.init();
+            numHTTPPackets = CudaAnalyzer.processMultiplePointersCountPackets(packetStrings);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+
+        return numHTTPPackets;
     }
 
     private static int[] convertIntegers(List<Integer> integers) {

@@ -76,6 +76,12 @@ public class JCudaStringsSample
         System.out.println("Test "+(passed ? "PASSED" : "FAILED"));*/
         wordList.add("LOCURAS");
         wordList.add("ADRENALINA");
+        wordList.add("OUTRA");
+        wordList.add("BAINA");
+        wordList.add("MAMBOS");
+        wordList.add("CENAS");
+        wordList.add("DERIVADO");
+        wordList.add("COISO");
         int[] numLetters = processMultiplePointersSumLetters(wordList);
 
         for(int n : numLetters) {
