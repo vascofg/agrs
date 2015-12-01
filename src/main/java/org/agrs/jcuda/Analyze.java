@@ -4,16 +4,17 @@ package org.agrs.jcuda;
  * Created by vascofg on 25-10-2015.
  */
 
+import org.jnetpcap.ByteBufferHandler;
 import org.jnetpcap.Pcap;
+import org.jnetpcap.PcapHeader;
 import org.jnetpcap.packet.AbstractMessageHeader;
 import org.jnetpcap.packet.PcapPacket;
 import org.jnetpcap.packet.PcapPacketHandler;
 import org.jnetpcap.protocol.JProtocol;
-import org.jnetpcap.protocol.network.Ip4;
 import org.jnetpcap.protocol.tcpip.Http;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -31,7 +32,7 @@ public class Analyze {
     public static void main(String[] args) {
 
         final StringBuilder errbuf = new StringBuilder(); // For any error msgs
-        final String file = "/run/media/vascofg/DATA/teste.pcap";
+        final String file = "/run/media/vascofg/DATA/1G.pcap";
 
         System.out.printf("OPENING FILE FOR READING: %s%n", file);
 
@@ -54,29 +55,30 @@ public class Analyze {
 
     private static long analyzeDPI(Pcap pcap) {
 
-        final PcapPacketHandler<AtomicLong> DPIHandler = new PcapPacketHandler<AtomicLong>() {
+        final ByteBufferHandler<AtomicLong> DPIHandler = new ByteBufferHandler<AtomicLong>() {
 
-            public void nextPacket(PcapPacket packet, AtomicLong sum) { //user param
+            @Override
+            public void nextPacket(PcapHeader pcapHeader, ByteBuffer packet, AtomicLong sum) {
                 int i = 0, state = 0;
                 Boolean isHTTP = null;
                 try {
                     while (isHTTP == null) {
                         switch (state) {
                             case 0:
-                                if (packet.getByte(i) == 'G' && packet.getByte(i + 1) == 'E' &&
-                                        packet.getByte(i + 2) == 'T' && packet.getByte(i + 3) == ' ') {
+                                if (packet.get(i) == 'G' && packet.get(i + 1) == 'E' &&
+                                        packet.get(i + 2) == 'T' && packet.get(i + 3) == ' ') {
                                     state++;
                                     i += 3;
                                 }
                                 break;
                             case 1:
-                                if (packet.getByte(i) == ' ')
+                                if (packet.get(i) == ' ')
                                     state++;
                                 break;
                             case 2:
-                                if (packet.getByte(i) == 'H' && packet.getByte(i + 1) == 'T' &&
-                                        packet.getByte(i + 2) == 'T' && packet.getByte(i + 3) == 'P' &&
-                                        packet.getByte(i + 4) == '/' && packet.getByte(i + 6) == '.')
+                                if (packet.get(i) == 'H' && packet.get(i + 1) == 'T' &&
+                                        packet.get(i + 2) == 'T' && packet.get(i + 3) == 'P' &&
+                                        packet.get(i + 4) == '/' && packet.get(i + 6) == '.')
                                     isHTTP = true;
                                 else
                                     isHTTP = false;
@@ -84,7 +86,7 @@ public class Analyze {
                         }
                         i++;
                     }
-                } catch (java.nio.BufferUnderflowException e) {
+                } catch (IndexOutOfBoundsException e) {
                     isHTTP = false;
                 }
 
@@ -100,29 +102,11 @@ public class Analyze {
         return numPackets.longValue();
     }
 
-    private static List<PcapPacket> analyzeIpPackets(Pcap pcap) {
-        final PcapPacketHandler<List<PcapPacket>> ipPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
 
-            public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
-                packet.scan(JProtocol.ETHERNET_ID);
+    private static long analyzeJnetpcap(Pcap pcap) {
+        final PcapPacketHandler<AtomicLong> httpPacketHandler = new PcapPacketHandler<AtomicLong>() {
 
-                Ip4 ip = new Ip4();
-
-                if (packet.hasHeader(ip)) {
-                    packets.add(packet);
-                }
-            }
-        };
-
-        List<PcapPacket> ipPackets = new LinkedList<>();
-        pcap.loop(Pcap.LOOP_INFINITE, ipPacketHandler, ipPackets);
-        return ipPackets;
-    }
-
-    private static List<PcapPacket> analyzeHttpPackets(Pcap pcap) {
-        final PcapPacketHandler<List<PcapPacket>> httpPacketHandler = new PcapPacketHandler<List<PcapPacket>>() {
-
-            public void nextPacket(PcapPacket packet, List<PcapPacket> packets) { //user param
+            public void nextPacket(PcapPacket packet, AtomicLong sum) { //user param
                 packet.scan(JProtocol.ETHERNET_ID);
 
                 Http http = new Http();
@@ -130,14 +114,14 @@ public class Analyze {
                 if (packet.hasHeader(http)) {
                     if (http.getMessageType() == AbstractMessageHeader.MessageType.REQUEST)
                         if (http.fieldValue(Http.Request.RequestMethod).equals("GET"))
-                            packets.add(packet);
+                            sum.getAndIncrement();
                 }
             }
         };
 
-        List<PcapPacket> httpPackets = new LinkedList<>();
-        pcap.loop(Pcap.LOOP_INFINITE, httpPacketHandler, httpPackets);
-        return httpPackets;
+        AtomicLong numPackets = new AtomicLong(0);
+        pcap.loop(Pcap.LOOP_INFINITE, httpPacketHandler, numPackets);
+        return numPackets.longValue();
     }
 
     private static long analyzeDPICUDA(Pcap pcap) {
@@ -148,22 +132,18 @@ public class Analyze {
 
         final List<Integer> packetIndices = new LinkedList<>();
 
-        final PcapPacketHandler<ByteArrayOutputStream> packetHandler = new PcapPacketHandler<ByteArrayOutputStream>() {
+        final ByteBufferHandler<ByteBuffer> byteBufferHandler = new ByteBufferHandler<ByteBuffer>() {
+            @Override
+            public void nextPacket(PcapHeader pcapHeader, ByteBuffer packetBuffer, ByteBuffer buffer) {
+                packetIndices.add(buffer.position());
+                buffer.put(packetBuffer);
 
-            public void nextPacket(PcapPacket packet, ByteArrayOutputStream stream) { //user param
-                try {
-                    packetIndices.add(stream.size());
-                    stream.write(packet.getByteArray(0, packet.size()));
-
-                    if (stream.size() > MAX_LENGTH)
-                        superPcap.breakloop();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                if (buffer.position() >= MAX_LENGTH)
+                    superPcap.breakloop();
             }
         };
 
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        ByteBuffer buffer = ByteBuffer.allocate(MAX_LENGTH+(1024*1024)); //Allocate extra 1MB for possible extra packet
         boolean finished = false;
         long numPackets = 0, numHTTPPackets = 0;
 
@@ -177,12 +157,12 @@ public class Analyze {
         while (!finished) {
             System.out.printf("%nSPLITTING PACKETS... ");
 
-            stream.reset();
+            buffer.clear();
             packetIndices.clear();
 
             long time0 = System.nanoTime();
 
-            int statusCode = pcap.loop(Pcap.LOOP_INFINITE, packetHandler, stream);
+            int statusCode = pcap.loop(Pcap.LOOP_INFINITE, byteBufferHandler, buffer);
 
             long time1 = System.nanoTime();
 
@@ -191,8 +171,8 @@ public class Analyze {
             if (statusCode == Pcap.OK) //FINISHED
                 finished = true;
 
-        /* add final buffer size*/
-            packetIndices.add(stream.size());
+            /* add final buffer size*/
+            packetIndices.add(buffer.position());
 
             int packetIndicesArray[] = new int[packetIndices.size()];
             ListIterator<Integer> itr = packetIndices.listIterator();
@@ -202,8 +182,8 @@ public class Analyze {
             }
 
             numPackets += (i - 1);
-            System.out.printf("SENDING %d PACKETS (%d MiB) TO CUDA%n", (i - 1), stream.size()/1024/1024);
-            numHTTPPackets += CudaAnalyzer.processSinglePointer(stream.toByteArray(), packetIndicesArray, i - 1);
+            System.out.printf("SENDING %d PACKETS (%d MiB) TO CUDA%n", (i - 1), buffer.position()/1024/1024);
+            numHTTPPackets += CudaAnalyzer.processSinglePointer(buffer.array(), packetIndicesArray, i - 1);
         }
         System.out.printf("%nDONE PROCESSING %d PACKETS%n", numPackets);
         return numHTTPPackets;
