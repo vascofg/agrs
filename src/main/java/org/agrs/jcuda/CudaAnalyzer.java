@@ -5,21 +5,14 @@ import jcuda.Sizeof;
 import jcuda.driver.*;
 
 import java.io.IOException;
-import java.util.List;
 
 import static jcuda.driver.JCudaDriver.*;
-import static jcuda.driver.JCudaDriver.cuMemFree;
-import static jcuda.driver.JCudaDriver.cuMemcpyDtoH;
 
-/**
- * Created by vascofg on 25-11-2015.
- */
 public class CudaAnalyzer {
 
-    private static CUfunction stringPacketKernel;
+    private static CUfunction bytePacketKernel;
 
-    public static void init() throws IOException
-    {
+    public static void init() throws IOException {
         System.out.println("[CUDA] INITIALIZING");
         // Enable exceptions and omit all subsequent error checks
         JCudaDriver.setExceptionsEnabled(true);
@@ -33,52 +26,27 @@ public class CudaAnalyzer {
 
         // Load the ptx file.
         CUmodule module = new CUmodule();
-        cuModuleLoad(module, "./target/kernels/JCudaStringPacketKernel.ptx");
+        cuModuleLoad(module, "./target/kernels/JCudaPacketKernel.ptx");
 
-        stringPacketKernel = new CUfunction();
-        cuModuleGetFunction(stringPacketKernel, module, "stringPacketKernel");
+        bytePacketKernel = new CUfunction();
+        cuModuleGetFunction(bytePacketKernel, module, "bytePacketKernel");
     }
 
-    public static long processMultiplePointersCountPackets(List<String> packetList)
-    {
-        int numPackets = packetList.size();
-
-        // Allocate and fill arrays on the device:
-        // - One one for each input word, which is filled
-        //   with the byte data for the respective word
-
+    public static long processSinglePointer(byte[] packets, int[] indices, int numPackets) {
         long time0 = System.nanoTime();
 
-        System.out.println("[CUDA] ALLOCATING AND COPYING");
+        System.out.print("[CUDA] ALLOCATING AND COPYING... ");
 
-        CUdeviceptr dPacketInputPointers[] = new CUdeviceptr[numPackets];
-        int packetLengths[] = new int[numPackets];
-        for(int i = 0; i < numPackets; i++)
-        {
-            String packet = packetList.get(i);
-            byte hostPacketData[] = packet.getBytes();
-            packetLengths[i] = hostPacketData.length;
+        CUdeviceptr dPacketInputPointer = new CUdeviceptr();
+        cuMemAlloc(dPacketInputPointer, packets.length * Sizeof.BYTE);
+        cuMemcpyHtoD(dPacketInputPointer,
+                Pointer.to(packets),
+                packets.length * Sizeof.BYTE);
 
-            dPacketInputPointers[i] = new CUdeviceptr();
-            cuMemAlloc(dPacketInputPointers[i], packetLengths[i] * Sizeof.BYTE);
-            cuMemcpyHtoD(dPacketInputPointers[i],
-                    Pointer.to(hostPacketData), packetLengths[i] * Sizeof.BYTE);
-        }
-
-        // Allocate device memory for the array of pointers
-        // that point to the individual input words, and copy
-        // the input word pointers from the host to the device.
-        CUdeviceptr dPacketInputPointersArray = new CUdeviceptr();
-        cuMemAlloc(dPacketInputPointersArray, numPackets * Sizeof.POINTER);
-        cuMemcpyHtoD(dPacketInputPointersArray,
-                Pointer.to(dPacketInputPointers),
-                numPackets * Sizeof.POINTER);
-
-        // Allocate and fill the device array for the word lengths
-        CUdeviceptr dPacketLengths = new CUdeviceptr();
-        cuMemAlloc(dPacketLengths, numPackets * Sizeof.INT);
-        cuMemcpyHtoD(dPacketLengths, Pointer.to(packetLengths),
-                numPackets * Sizeof.INT);
+        CUdeviceptr dPacketIndices = new CUdeviceptr();
+        cuMemAlloc(dPacketIndices, indices.length * Sizeof.INT);
+        cuMemcpyHtoD(dPacketIndices, Pointer.to(indices),
+                indices.length * Sizeof.INT);
 
         CUdeviceptr dNumHTTPPackets = new CUdeviceptr();
         cuMemAlloc(dNumHTTPPackets, numPackets * Sizeof.BYTE);
@@ -86,23 +54,23 @@ public class CudaAnalyzer {
         // Set up the kernel parameters
         Pointer kernelParams = Pointer.to(
                 Pointer.to(new int[]{numPackets}),
-                Pointer.to(dPacketInputPointersArray),
-                Pointer.to(dPacketLengths),
+                Pointer.to(dPacketInputPointer),
+                Pointer.to(dPacketIndices),
                 Pointer.to(dNumHTTPPackets)
         );
 
         long time1 = System.nanoTime();
 
-        System.out.printf("[CUDA] %5.3fms%n", (time1-time0) / 1e6);
+        System.out.printf("%5.3fms%n", (time1 - time0) / 1e6);
 
-        System.out.println("[CUDA] COMPUTING");
+        System.out.print("[CUDA] COMPUTING... ");
 
         // Call the kernel function.
         int blockDimX = 256;
-        int gridDimX = (int)Math.ceil((double)numPackets/blockDimX);
+        int gridDimX = (int) Math.ceil((double) numPackets / blockDimX);
 
         time0 = System.nanoTime();
-        cuLaunchKernel(stringPacketKernel,
+        cuLaunchKernel(bytePacketKernel,
                 gridDimX, 1, 1,    // Grid dimension
                 blockDimX, 1, 1,   // Block dimension
                 0, null,           // Shared memory size and stream
@@ -110,29 +78,28 @@ public class CudaAnalyzer {
         );
         cuCtxSynchronize();
         time1 = System.nanoTime();
-        System.out.printf("[CUDA] %5.3fms%n", (time1-time0) / 1e6);
+        System.out.printf("%5.3fms%n", (time1 - time0) / 1e6);
 
         byte[] numHTTPPackets = new byte[numPackets];
 
-        System.out.println("[CUDA] GATHERING RESULTS");
+        System.out.print("[CUDA] GATHERING RESULTS... ");
 
+        time0 = System.nanoTime();
         cuMemcpyDtoH(Pointer.to(numHTTPPackets), dNumHTTPPackets, numPackets
                 * Sizeof.BYTE);
+        time1 = System.nanoTime();
+        System.out.printf("%5.3fms%n", (time1 - time0) / 1e6);
 
         long sum = 0;
 
         // Clean up.
-        for(int i = 0; i < numPackets; i++)
-        {
-            cuMemFree(dPacketInputPointers[i]);
-            if(numHTTPPackets[i]>0)
+        for (int i = 0; i < numPackets; i++) {
+            if (numHTTPPackets[i] > 0)
                 sum++;
         }
-        cuMemFree(dPacketInputPointersArray);
+        cuMemFree(dPacketInputPointer);
         cuMemFree(dNumHTTPPackets);
-        cuMemFree(dPacketLengths);
-
-        System.out.println("[CUDA] ALL DONE");
+        cuMemFree(dPacketIndices);
 
         return sum;
     }
