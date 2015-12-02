@@ -16,10 +16,6 @@ import org.jnetpcap.protocol.tcpip.Http;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.ListIterator;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class Analyze {
@@ -29,6 +25,10 @@ public class Analyze {
      *
      * @param args ignored
      */
+
+
+    final static int ITERATION_MAXLEN = 67108864; /*64MiB*/
+    final static int ABSOLUTE_MAXLEN = 68157440; /*65MiB*/
 
     public static void main(String[] args) {
 
@@ -51,6 +51,7 @@ public class Analyze {
 
         System.out.printf("FOUND %d HTTP PACKETS IN %5.3fms%n", result, (time1 - time0) / 1e6);
 
+        CudaAnalyzer.close();
         pcap.close();
     }
 
@@ -129,9 +130,7 @@ public class Analyze {
 
         final Pcap superPcap = pcap;
 
-        final int MAX_LENGTH = 67108864; /*64MiB*/
-
-        final IntBuffer packetIndices = IntBuffer.allocate(MAX_LENGTH/64); //min packet size should be 64 bytes
+        final IntBuffer packetIndices = IntBuffer.allocate(ITERATION_MAXLEN / 64); //min packet size should be 64 bytes
 
         final ByteBufferHandler<ByteBuffer> byteBufferHandler = new ByteBufferHandler<ByteBuffer>() {
             @Override
@@ -139,12 +138,12 @@ public class Analyze {
                 packetIndices.put(buffer.position());
                 buffer.put(packetBuffer);
 
-                if (buffer.position() >= MAX_LENGTH)
+                if (buffer.position() >= ITERATION_MAXLEN)
                     superPcap.breakloop();
             }
         };
 
-        ByteBuffer packetBuffer = ByteBuffer.allocate(MAX_LENGTH+(1024*1024)); //Allocate extra 1MB for possible extra packet
+        ByteBuffer packetBuffer = ByteBuffer.allocate(ABSOLUTE_MAXLEN); //Allocate extra 1MB for possible extra packet
         boolean finished = false;
         long numPackets = 0, numHTTPPackets = 0;
 
@@ -178,7 +177,7 @@ public class Analyze {
             int iterNumPackets = packetIndices.position() - 1; //remove extra buffer size
 
             numPackets += iterNumPackets;
-            System.out.printf("SENDING %d PACKETS (%d MiB) TO CUDA%n", iterNumPackets, packetBuffer.position()/1024/1024);
+            System.out.printf("SENDING %d PACKETS (%d MiB) TO CUDA%n", iterNumPackets, packetBuffer.position() / 1024 / 1024);
             numHTTPPackets += CudaAnalyzer.processSinglePointer(packetBuffer.array(), packetIndices.array(), iterNumPackets);
         }
         System.out.printf("%nDONE PROCESSING %d PACKETS%n", numPackets);

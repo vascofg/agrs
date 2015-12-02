@@ -12,6 +12,10 @@ public class CudaAnalyzer {
 
     private static CUfunction bytePacketKernel;
 
+    private static CUdeviceptr dPacketInputPointer;
+    private static CUdeviceptr dPacketIndices;
+    private static CUdeviceptr dNumHTTPPackets;
+
     public static void init() throws IOException {
         System.out.println("[CUDA] INITIALIZING");
         // Enable exceptions and omit all subsequent error checks
@@ -30,6 +34,14 @@ public class CudaAnalyzer {
 
         bytePacketKernel = new CUfunction();
         cuModuleGetFunction(bytePacketKernel, module, "bytePacketKernel");
+
+        dPacketInputPointer = new CUdeviceptr();
+        dPacketIndices = new CUdeviceptr();
+        dNumHTTPPackets = new CUdeviceptr();
+
+        cuMemAlloc(dPacketInputPointer, Analyze.ABSOLUTE_MAXLEN * Sizeof.BYTE);
+        cuMemAlloc(dPacketIndices, Analyze.ABSOLUTE_MAXLEN * Sizeof.INT);
+        cuMemAlloc(dNumHTTPPackets, Analyze.ABSOLUTE_MAXLEN * Sizeof.BYTE);
     }
 
     public static long processSinglePointer(byte[] packets, int[] indices, int numPackets) {
@@ -37,19 +49,13 @@ public class CudaAnalyzer {
 
         System.out.print("[CUDA] ALLOCATING AND COPYING... ");
 
-        CUdeviceptr dPacketInputPointer = new CUdeviceptr();
-        cuMemAlloc(dPacketInputPointer, packets.length * Sizeof.BYTE);
+
         cuMemcpyHtoD(dPacketInputPointer,
                 Pointer.to(packets),
                 packets.length * Sizeof.BYTE);
 
-        CUdeviceptr dPacketIndices = new CUdeviceptr();
-        cuMemAlloc(dPacketIndices, indices.length * Sizeof.INT);
         cuMemcpyHtoD(dPacketIndices, Pointer.to(indices),
                 indices.length * Sizeof.INT);
-
-        CUdeviceptr dNumHTTPPackets = new CUdeviceptr();
-        cuMemAlloc(dNumHTTPPackets, numPackets * Sizeof.BYTE);
 
         // Set up the kernel parameters
         Pointer kernelParams = Pointer.to(
@@ -92,15 +98,17 @@ public class CudaAnalyzer {
 
         long sum = 0;
 
-        // Clean up.
         for (int i = 0; i < numPackets; i++) {
             if (numHTTPPackets[i] > 0)
                 sum++;
         }
+
+        return sum;
+    }
+
+    public static void close() {
         cuMemFree(dPacketInputPointer);
         cuMemFree(dNumHTTPPackets);
         cuMemFree(dPacketIndices);
-
-        return sum;
     }
 }
