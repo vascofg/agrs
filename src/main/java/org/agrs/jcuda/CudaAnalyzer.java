@@ -12,12 +12,18 @@ public class CudaAnalyzer {
 
     private static CUfunction bytePacketKernel;
 
+    private static CUdeviceptr dNumRepeats;
     private static CUdeviceptr dPacketInputPointer;
     private static CUdeviceptr dPacketIndices;
     private static CUdeviceptr dNumHTTPPackets;
 
+    private static long totalComputeTime;
+
     public static void init() throws IOException {
         System.out.println("[CUDA] INITIALIZING");
+
+        totalComputeTime = 0;
+
         // Enable exceptions and omit all subsequent error checks
         JCudaDriver.setExceptionsEnabled(true);
 
@@ -35,13 +41,19 @@ public class CudaAnalyzer {
         bytePacketKernel = new CUfunction();
         cuModuleGetFunction(bytePacketKernel, module, "bytePacketKernel");
 
+        dNumRepeats = new CUdeviceptr();
         dPacketInputPointer = new CUdeviceptr();
         dPacketIndices = new CUdeviceptr();
         dNumHTTPPackets = new CUdeviceptr();
 
+        cuModuleGetGlobal(dNumRepeats, new long[1], module,
+                "numRepeats");
+
         cuMemAlloc(dPacketInputPointer, Analyze.ABSOLUTE_MAXLEN * Sizeof.BYTE);
         cuMemAlloc(dPacketIndices, Analyze.ABSOLUTE_MAXLEN * Sizeof.INT);
         cuMemAlloc(dNumHTTPPackets, Analyze.ABSOLUTE_MAXLEN * Sizeof.BYTE);
+
+        cuMemcpyHtoD(dNumRepeats, Pointer.to(new int[]{Analyze.NUM_REPEATS}), Sizeof.INT);
     }
 
     public static long processSinglePointer(byte[] packets, int[] indices, int numPackets) {
@@ -84,6 +96,7 @@ public class CudaAnalyzer {
         );
         cuCtxSynchronize();
         time1 = System.nanoTime();
+        totalComputeTime += (time1 - time0);
         System.out.printf("%5.3fms%n", (time1 - time0) / 1e6);
 
         byte[] numHTTPPackets = new byte[numPackets];
@@ -107,8 +120,12 @@ public class CudaAnalyzer {
     }
 
     public static void close() {
+        System.out.println("[CUDA] CLOSING");
+
         cuMemFree(dPacketInputPointer);
         cuMemFree(dNumHTTPPackets);
         cuMemFree(dPacketIndices);
+
+        System.out.printf("[CUDA] TOTAL COMPUTE TIME: %5.3fms%n", totalComputeTime / 1e6);
     }
 }

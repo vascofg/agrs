@@ -28,7 +28,9 @@ public class Analyze {
 
 
     final static int ITERATION_MAXLEN = 67108864; /*64MiB*/
-    final static int ABSOLUTE_MAXLEN = 68157440; /*65MiB*/
+    final static int ABSOLUTE_MAXLEN = ITERATION_MAXLEN + 1048576; /*MAXLEN + 1MiB*/
+
+    final static int NUM_REPEATS = 10; /*number of times to run algorithm (performance test purposes)*/
 
     public static void main(String[] args) {
 
@@ -56,11 +58,14 @@ public class Analyze {
 
     private static long analyzeDPI(Pcap pcap) {
 
+        final AtomicLong totalComputeTime = new AtomicLong(0);
+
         final ByteBufferHandler<AtomicLong> DPIHandler = new ByteBufferHandler<AtomicLong>() {
 
             @Override
             public void nextPacket(PcapHeader pcapHeader, ByteBuffer packet, AtomicLong sum) {
-                for (int repeat = 0; repeat < 10; repeat++) {
+                long time0 = System.nanoTime();
+                for (int repeat = 0; repeat < NUM_REPEATS; repeat++) {
                     int i = 0, state = 0;
                     Boolean isHTTP = null;
                     try {
@@ -96,11 +101,15 @@ public class Analyze {
                         sum.getAndIncrement();
                     }
                 }
+                long time1 = System.nanoTime();
+                totalComputeTime.addAndGet(time1 - time0);
             }
         };
 
         AtomicLong numPackets = new AtomicLong(0);
         pcap.loop(Pcap.LOOP_INFINITE, DPIHandler, numPackets);
+
+        System.out.printf("TOTAL COMPUTE TIME: %5.3fms%n", totalComputeTime.longValue() / 1e6);
 
         return numPackets.longValue();
     }

@@ -1,3 +1,5 @@
+__constant__ int numRepeats;
+
 extern "C"
 __global__ void bytePacketKernel(
     int numPackets,
@@ -10,7 +12,7 @@ __global__ void bytePacketKernel(
     {
         int packetStart = packetIndices[tid];
         int nextPacket = packetIndices[tid+1];
-        for(int repeat=0;repeat<10;repeat++) {
+        for(int repeat=0;repeat<numRepeats;repeat++) {
             numHTTPPackets[tid]=0;
             int state = 0;
             for (int i=packetStart; i<nextPacket; i++)
