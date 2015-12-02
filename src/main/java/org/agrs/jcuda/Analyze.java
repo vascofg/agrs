@@ -15,6 +15,7 @@ import org.jnetpcap.protocol.tcpip.Http;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -130,12 +131,12 @@ public class Analyze {
 
         final int MAX_LENGTH = 67108864; /*64MiB*/
 
-        final List<Integer> packetIndices = new LinkedList<>();
+        final IntBuffer packetIndices = IntBuffer.allocate(MAX_LENGTH/64); //min packet size should be 64 bytes
 
         final ByteBufferHandler<ByteBuffer> byteBufferHandler = new ByteBufferHandler<ByteBuffer>() {
             @Override
             public void nextPacket(PcapHeader pcapHeader, ByteBuffer packetBuffer, ByteBuffer buffer) {
-                packetIndices.add(buffer.position());
+                packetIndices.put(buffer.position());
                 buffer.put(packetBuffer);
 
                 if (buffer.position() >= MAX_LENGTH)
@@ -143,7 +144,7 @@ public class Analyze {
             }
         };
 
-        ByteBuffer buffer = ByteBuffer.allocate(MAX_LENGTH+(1024*1024)); //Allocate extra 1MB for possible extra packet
+        ByteBuffer packetBuffer = ByteBuffer.allocate(MAX_LENGTH+(1024*1024)); //Allocate extra 1MB for possible extra packet
         boolean finished = false;
         long numPackets = 0, numHTTPPackets = 0;
 
@@ -157,12 +158,12 @@ public class Analyze {
         while (!finished) {
             System.out.printf("%nSPLITTING PACKETS... ");
 
-            buffer.clear();
+            packetBuffer.clear();
             packetIndices.clear();
 
             long time0 = System.nanoTime();
 
-            int statusCode = pcap.loop(Pcap.LOOP_INFINITE, byteBufferHandler, buffer);
+            int statusCode = pcap.loop(Pcap.LOOP_INFINITE, byteBufferHandler, packetBuffer);
 
             long time1 = System.nanoTime();
 
@@ -172,29 +173,15 @@ public class Analyze {
                 finished = true;
 
             /* add final buffer size*/
-            packetIndices.add(buffer.position());
+            packetIndices.put(packetBuffer.position());
 
-            int packetIndicesArray[] = new int[packetIndices.size()];
-            ListIterator<Integer> itr = packetIndices.listIterator();
-            int i = 0;
-            while (itr.hasNext()) {
-                packetIndicesArray[i++] = itr.next();
-            }
+            int iterNumPackets = packetIndices.position() - 1; //remove extra buffer size
 
-            numPackets += (i - 1);
-            System.out.printf("SENDING %d PACKETS (%d MiB) TO CUDA%n", (i - 1), buffer.position()/1024/1024);
-            numHTTPPackets += CudaAnalyzer.processSinglePointer(buffer.array(), packetIndicesArray, i - 1);
+            numPackets += iterNumPackets;
+            System.out.printf("SENDING %d PACKETS (%d MiB) TO CUDA%n", iterNumPackets, packetBuffer.position()/1024/1024);
+            numHTTPPackets += CudaAnalyzer.processSinglePointer(packetBuffer.array(), packetIndices.array(), iterNumPackets);
         }
         System.out.printf("%nDONE PROCESSING %d PACKETS%n", numPackets);
         return numHTTPPackets;
-    }
-
-    private static int[] convertIntegers(List<Integer> integers) {
-        int[] ret = new int[integers.size()];
-        Iterator<Integer> iterator = integers.iterator();
-        for (int i = 0; i < ret.length; i++) {
-            ret[i] = iterator.next().intValue();
-        }
-        return ret;
     }
 }
