@@ -51,7 +51,6 @@ public class Analyze {
 
         System.out.printf("FOUND %d HTTP PACKETS IN %5.3fms%n", result, (time1 - time0) / 1e6);
 
-        CudaAnalyzer.close();
         pcap.close();
     }
 
@@ -181,6 +180,7 @@ public class Analyze {
             numHTTPPackets += CudaAnalyzer.processSinglePointer(packetBuffer.array(), packetIndices.array(), iterNumPackets);
         }
         System.out.printf("%nDONE PROCESSING %d PACKETS%n", numPackets);
+        CudaAnalyzer.close(); //clean up cuda memory
         return numHTTPPackets;
     }
 }
