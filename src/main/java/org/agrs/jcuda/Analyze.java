@@ -60,39 +60,41 @@ public class Analyze {
 
             @Override
             public void nextPacket(PcapHeader pcapHeader, ByteBuffer packet, AtomicLong sum) {
-                int i = 0, state = 0;
-                Boolean isHTTP = null;
-                try {
-                    while (isHTTP == null) {
-                        switch (state) {
-                            case 0:
-                                if (packet.get(i) == 'G' && packet.get(i + 1) == 'E' &&
-                                        packet.get(i + 2) == 'T' && packet.get(i + 3) == ' ') {
-                                    state++;
-                                    i += 3;
-                                }
-                                break;
-                            case 1:
-                                if (packet.get(i) == ' ')
-                                    state++;
-                                break;
-                            case 2:
-                                if (packet.get(i) == 'H' && packet.get(i + 1) == 'T' &&
-                                        packet.get(i + 2) == 'T' && packet.get(i + 3) == 'P' &&
-                                        packet.get(i + 4) == '/' && packet.get(i + 6) == '.')
-                                    isHTTP = true;
-                                else
-                                    isHTTP = false;
-                                break;
+                for (int repeat = 0; repeat < 10; repeat++) {
+                    int i = 0, state = 0;
+                    Boolean isHTTP = null;
+                    try {
+                        while (isHTTP == null) {
+                            switch (state) {
+                                case 0:
+                                    if (packet.get(i) == 'G' && packet.get(i + 1) == 'E' &&
+                                            packet.get(i + 2) == 'T' && packet.get(i + 3) == ' ') {
+                                        state++;
+                                        i += 3;
+                                    }
+                                    break;
+                                case 1:
+                                    if (packet.get(i) == ' ')
+                                        state++;
+                                    break;
+                                case 2:
+                                    if (packet.get(i) == 'H' && packet.get(i + 1) == 'T' &&
+                                            packet.get(i + 2) == 'T' && packet.get(i + 3) == 'P' &&
+                                            packet.get(i + 4) == '/' && packet.get(i + 6) == '.')
+                                        isHTTP = true;
+                                    else
+                                        isHTTP = false;
+                                    break;
+                            }
+                            i++;
                         }
-                        i++;
+                    } catch (IndexOutOfBoundsException e) {
+                        isHTTP = false;
                     }
-                } catch (IndexOutOfBoundsException e) {
-                    isHTTP = false;
-                }
 
-                if (isHTTP) {
-                    sum.getAndIncrement();
+                    if (isHTTP) {
+                        sum.getAndIncrement();
+                    }
                 }
             }
         };
