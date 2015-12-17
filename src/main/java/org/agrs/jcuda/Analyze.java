@@ -27,10 +27,12 @@ public class Analyze {
      */
 
 
+    //final static int ITERATION_MAXLEN = 1048576; /*1MiB*/
+    //final static int ITERATION_MAXLEN = 268435456; /*256MiB*/
     final static int ITERATION_MAXLEN = 67108864; /*64MiB*/
     final static int ABSOLUTE_MAXLEN = ITERATION_MAXLEN + 1048576; /*MAXLEN + 1MiB*/
 
-    final static int NUM_REPEATS = 10; /*number of times to run algorithm (performance test purposes)*/
+    final static int NUM_REPEATS = 1; /*number of times to run algorithm (performance test purposes)*/
 
     public static void main(String[] args) {
 
@@ -140,7 +142,7 @@ public class Analyze {
 
         final Pcap superPcap = pcap;
 
-        final IntBuffer packetIndices = IntBuffer.allocate(ITERATION_MAXLEN / 64); //min packet size should be 64 bytes
+        final IntBuffer packetIndices = IntBuffer.allocate(ABSOLUTE_MAXLEN / 64); //min packet size should be 64 bytes
 
         final ByteBufferHandler<ByteBuffer> byteBufferHandler = new ByteBufferHandler<ByteBuffer>() {
             @Override

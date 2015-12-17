@@ -18,11 +18,13 @@ public class CudaAnalyzer {
     private static CUdeviceptr dNumHTTPPackets;
 
     private static long totalComputeTime;
+    private static long totalAllocTime;
 
     public static void init() throws IOException {
         System.out.println("[CUDA] INITIALIZING");
 
         totalComputeTime = 0;
+        totalAllocTime = 0;
 
         // Enable exceptions and omit all subsequent error checks
         JCudaDriver.setExceptionsEnabled(true);
@@ -79,6 +81,7 @@ public class CudaAnalyzer {
 
         long time1 = System.nanoTime();
 
+        totalAllocTime += (time1 - time0);
         System.out.printf("%5.3fms%n", (time1 - time0) / 1e6);
 
         System.out.print("[CUDA] COMPUTING... ");
@@ -126,6 +129,7 @@ public class CudaAnalyzer {
         cuMemFree(dNumHTTPPackets);
         cuMemFree(dPacketIndices);
 
+        System.out.printf("[CUDA] TOTAL ALLOCATION TIME: %5.3fms%n", totalAllocTime / 1e6);
         System.out.printf("[CUDA] TOTAL COMPUTE TIME: %5.3fms%n", totalComputeTime / 1e6);
     }
 }
