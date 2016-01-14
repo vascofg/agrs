@@ -69,3 +69,6 @@ project/plugins/project/
 
 # PCAP
 tests/
+
+# Maven
+repo/
